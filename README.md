@@ -27,8 +27,9 @@ hooks capture what the executor saw and the tool reads it:
   `getConfiguredProvider("inference", { overrideProfile })` and runs a tool-less, capped
   `sendMessage`, returning the text. It **soft-fails** (never throws), so a consult never fails
   the turn.
-- **`src/transcript.ts`** sanitizes the transcript for the advisor (drops thinking/images,
-  drops `server_tool_use` + web-search results together, strips the pending `advisor` call).
+- **`src/transcript.ts`** sanitizes the transcript for the advisor (drops thinking, keeps
+  images, drops `server_tool_use` + web-search results together, strips the pending `advisor`
+  call).
 
 Recursion-safe: the advisor sub-call runs through `sendMessage` directly (not the agent loop),
 and the capture hooks gate on `mainAgent`, so the advisor can't trigger itself.

@@ -103,7 +103,23 @@ describe("toAdvisorMessages", () => {
     );
   });
 
-  test("strips rich contentBlocks from tool_result, keeping the text payload", () => {
+  test("keeps top-level image blocks", () => {
+    const img: ContentBlock = {
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "x" },
+    };
+    const messages: Message[] = [
+      { role: "user", content: [text("look at this"), img] },
+    ];
+    const out = toAdvisorMessages(messages);
+    expect(out[0].content).toEqual([text("look at this"), img]);
+  });
+
+  test("keeps image contentBlocks on a tool_result, dropping disallowed ones", () => {
+    const img: ContentBlock = {
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "x" },
+    };
     const messages: Message[] = [
       {
         role: "user",
@@ -111,11 +127,17 @@ describe("toAdvisorMessages", () => {
           {
             type: "tool_result",
             tool_use_id: "a",
-            content: "text payload",
+            content: "screenshot",
             contentBlocks: [
+              img,
               {
-                type: "image",
-                source: { type: "base64", media_type: "image/png", data: "x" },
+                type: "file",
+                source: {
+                  type: "base64",
+                  media_type: "application/pdf",
+                  data: "z",
+                  filename: "f.pdf",
+                },
               },
             ],
           },
@@ -126,8 +148,8 @@ describe("toAdvisorMessages", () => {
     expect(out[0].content[0]).toEqual({
       type: "tool_result",
       tool_use_id: "a",
-      content: "text payload",
-      contentBlocks: undefined,
+      content: "screenshot",
+      contentBlocks: [img], // image kept, file dropped
     });
   });
 });

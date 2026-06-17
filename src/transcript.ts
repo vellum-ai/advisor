@@ -4,13 +4,16 @@
  *
  * Strips blocks the advisor shouldn't (or can't) replay:
  *  - thinking / redacted-thinking (the advisor tool drops thinking),
- *  - images / files (keep the consult text-only and provider-agnostic),
+ *  - files,
  *  - `server_tool_use` AND `web_search_tool_result` — provider-side tool calls
  *    (e.g. web search) and their results are dropped *together*. Dropping the
  *    result without its paired `server_tool_use` would leave an orphaned call
  *    block the provider rejects, so any consult after prior web-search history
  *    would fail; dropping both keeps the sequence valid.
- *  - rich/nested blocks on a `tool_result` (keep its text payload).
+ *
+ * Images are preserved — top-level and nested inside `tool_result.contentBlocks`
+ * (which are recursively sanitized) — so the advisor sees what the executor saw.
+ * Visual tasks depend on it; the advisor profile is expected to be vision-capable.
  *
  * It also strips the *pending* client tool calls from the final assistant turn:
  * at capture time (a `post-model-call` before tools run) the last assistant
@@ -21,21 +24,29 @@
 
 import type { ContentBlock, Message } from "@vellumai/plugin-api";
 
-/** Drop disallowed blocks; thin out rich tool_result content. `null` = drop. */
+/** Drop disallowed blocks; recursively sanitize tool_result content. `null` = drop. */
 function sanitize(block: ContentBlock): ContentBlock | null {
   switch (block.type) {
     case "thinking":
     case "redacted_thinking":
-    case "image":
     case "file":
     case "server_tool_use":
     case "web_search_tool_result":
       return null;
-    case "tool_result":
-      return block.contentBlocks
-        ? { ...block, contentBlocks: undefined }
-        : block;
+    case "tool_result": {
+      if (!block.contentBlocks) return block;
+      // Keep images (and other allowed blocks) nested in the tool result; drop
+      // the disallowed ones.
+      const contentBlocks = block.contentBlocks
+        .map(sanitize)
+        .filter((b): b is ContentBlock => b !== null);
+      return {
+        ...block,
+        contentBlocks: contentBlocks.length > 0 ? contentBlocks : undefined,
+      };
+    }
     default:
+      // text, image, tool_use — kept.
       return block;
   }
 }
