@@ -1,0 +1,5 @@
+node_modules/
+*.tsbuildinfo
+
+# CI workflow excluded from initial push (token lacks `workflow` scope); add via UI or `gh auth refresh -s workflow`
+.github/workflows/

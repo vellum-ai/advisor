@@ -1,0 +1,133 @@
+import { describe, expect, test } from "bun:test";
+
+import type { ContentBlock, Message } from "@vellumai/plugin-api";
+
+import { toAdvisorMessages } from "../src/transcript.js";
+
+const text = (t: string): ContentBlock => ({ type: "text", text: t });
+
+describe("toAdvisorMessages", () => {
+  test("drops thinking and redacted-thinking blocks", () => {
+    const messages: Message[] = [
+      { role: "user", content: [text("do the task")] },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "secret", signature: "sig" },
+          { type: "redacted_thinking", data: "blob" },
+          text("here is my answer"),
+        ],
+      },
+    ];
+    const out = toAdvisorMessages(messages);
+    expect(out).toHaveLength(2);
+    expect(out[1].content).toEqual([text("here is my answer")]);
+  });
+
+  test("strips the pending advisor tool_use from the final assistant turn", () => {
+    const messages: Message[] = [
+      { role: "user", content: [text("task")] },
+      {
+        role: "assistant",
+        content: [
+          text("let me consult the advisor"),
+          { type: "tool_use", id: "t1", name: "advisor", input: {} },
+        ],
+      },
+    ];
+    const out = toAdvisorMessages(messages);
+    expect(out[1].content).toEqual([text("let me consult the advisor")]);
+  });
+
+  test("preserves completed client tool_use / tool_result pairs in earlier turns", () => {
+    const messages: Message[] = [
+      { role: "user", content: [text("task")] },
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "a", name: "bash", input: {} }],
+      },
+      {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "a", content: "output" }],
+      },
+      { role: "assistant", content: [text("done")] },
+    ];
+    const out = toAdvisorMessages(messages);
+    expect(out[1].content[0]).toEqual({
+      type: "tool_use",
+      id: "a",
+      name: "bash",
+      input: {},
+    });
+    expect(out[2].content[0]).toEqual({
+      type: "tool_result",
+      tool_use_id: "a",
+      content: "output",
+    });
+  });
+
+  test("drops a web-search server_tool_use AND its result together — no orphan (Codex fix)", () => {
+    // A completed provider-side web search: the `server_tool_use` call lives in
+    // an earlier (non-final) assistant turn; its `web_search_tool_result`
+    // follows. Dropping only the result would orphan the call and the provider
+    // would reject the consult. Both must be dropped.
+    const messages: Message[] = [
+      { role: "user", content: [text("look it up")] },
+      {
+        role: "assistant",
+        content: [
+          text("searching"),
+          { type: "server_tool_use", id: "ws1", name: "web_search", input: {} },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "web_search_tool_result",
+            tool_use_id: "ws1",
+            content: [{ title: "x", url: "y" }],
+          },
+        ],
+      },
+      { role: "assistant", content: [text("found it; here is the answer")] },
+    ];
+    const out = toAdvisorMessages(messages);
+    const flat = out.flatMap((m) => m.content);
+    expect(flat.some((b) => b.type === "server_tool_use")).toBe(false);
+    expect(flat.some((b) => b.type === "web_search_tool_result")).toBe(false);
+    // The surrounding text survives.
+    expect(out.map((m) => m.content).flat()).toContainEqual(text("searching"));
+    expect(out.map((m) => m.content).flat()).toContainEqual(
+      text("found it; here is the answer"),
+    );
+  });
+
+  test("strips rich contentBlocks from tool_result, keeping the text payload", () => {
+    const messages: Message[] = [
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "a",
+            content: "text payload",
+            contentBlocks: [
+              {
+                type: "image",
+                source: { type: "base64", media_type: "image/png", data: "x" },
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    const out = toAdvisorMessages(messages);
+    expect(out[0].content[0]).toEqual({
+      type: "tool_result",
+      tool_use_id: "a",
+      content: "text payload",
+      contentBlocks: undefined,
+    });
+  });
+});
