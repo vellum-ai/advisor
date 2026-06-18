@@ -59,8 +59,14 @@ export async function consultAdvisor(params: ConsultParams): Promise<string> {
     return "(advisor: no conversation context is available yet)";
   }
 
+  // Force the advisor's profile above any per-call-site config the workspace
+  // has pinned to `inference` (often a cheap default). A plain `overrideProfile`
+  // is the weakest override layer and loses to a call-site override, which would
+  // silently route the consult to that cheaper model; `forceOverrideProfile`
+  // floats the advisor's chosen profile back on top.
   const provider = await getConfiguredProvider(ADVISOR_CALL_SITE, {
     overrideProfile: ADVISOR_CONFIG.profile,
+    forceOverrideProfile: true,
   });
   if (!provider) {
     return "(advisor unavailable: no inference provider is configured)";
@@ -83,6 +89,10 @@ export async function consultAdvisor(params: ConsultParams): Promise<string> {
     config: {
       callSite: ADVISOR_CALL_SITE,
       overrideProfile: ADVISOR_CONFIG.profile,
+      // Mirror the force onto the send config: `callSite` is set here, so the
+      // call-site provider passes this config through verbatim and the resolve
+      // runs off these fields rather than the ones given to getConfiguredProvider.
+      forceOverrideProfile: true,
       tool_choice: { type: "none" },
       max_tokens: ADVISOR_CONFIG.maxTokens,
     },
