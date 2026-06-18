@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@vellumai/plugin-api": "^0.8.0"
+    "@vellumai/plugin-api": ">=0.8.0 <0.10.0"
   },
   "peerDependenciesMeta": {
     "@vellumai/plugin-api": {
